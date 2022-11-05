@@ -1,4 +1,13 @@
 *.out
-xtract/
 *.egg-info/
 __pycacha__
+dist/*
+build/*
+doc/*
+rayir/algorithm
+rayir/bseriesdesign.py
+rayir/ops.py
+rayir/sdbeam.py
+rayir/sdcolumn.py
+rayir/sectiondesign.py
+*/__pycache__

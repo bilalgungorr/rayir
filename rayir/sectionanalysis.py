@@ -1,6 +1,3 @@
-# syn keyword pythonStatement self
-# set foldmethod=indent 
-
 import numpy as np
 import matplotlib.pyplot as plt
 from itertools import count
@@ -1942,7 +1939,7 @@ class SectionAnalysis:
         return self.center_strain - sign*self.curvature*(coor - section_center)
             
 
-    def MomentCurvature(self, compression_strain, axial_load, direction=3):
+    def _MomentCurvature(self, compression_strain, axial_load, direction=3):
         """
 
         """
@@ -2046,14 +2043,13 @@ class SectionAnalysis:
                     break
         
         
-        #self.compression_strain = np.array(compression_strain2)
         self.curvature, self.moment = np.array([Phi, Moment])
         self.center_strain = np.array(center_strain)
         
         return self.curvature, self.moment
 
 
-    def MomentCurvature12(self, phis, axial_load, direction=3):
+    def MomentCurvature(self, phis, axial_load, direction=3):
         """
 
         """
@@ -2081,7 +2077,6 @@ class SectionAnalysis:
             Fel = []
             for part, material in parts_mats_items:
                 coor = self._center_dict[part][dir_ind]
-                #strain = eps0 - phi*(coor - depth)
                 strain =  -phi*(coor - depth)
                 sigma_var = material.stress(strain) # MPa
                 Fel.append(sigma_var@self._area_dict[part]) # MPa*mm**2 = N
@@ -2089,7 +2084,6 @@ class SectionAnalysis:
 
 
         phis = sign*phis
-        compression_strain = []
         Moment = []
         Phi = []
         center_strain = []
@@ -2105,7 +2099,6 @@ class SectionAnalysis:
             c2 = self.Secant(c0, c1, axial_load, sumForce, 100, 100)
             if c2 != None and (0 < c2 < h1):
                 moment = 0
-                eps = -phi*(eps_height - c2)
                 for part, material in parts_mats_items:
                     coor = self._center_dict[part][dir_ind]
                     strain = -phi*(coor - c2)
@@ -2114,13 +2107,9 @@ class SectionAnalysis:
                     if limit_strain:
                         if limit_strain > 0 and np.any(strain > limit_strain):
                             brk = 1
-                            print('m12 max', part, max(strain))
-                            #print('m12 min', part, min(strain))
 
                         elif limit_strain < 0 and np.any(strain < limit_strain):
                             brk = 1
-                            #print('m12 max', part, max(strain))
-                            print('m12 min', part, min(strain))
                     
                     sigma_var = material.stress(strain) # MPa
                     moment += (sigma_var*self._area_dict[part])@(section_center - coor) # Nmm
@@ -2128,19 +2117,15 @@ class SectionAnalysis:
                 if brk == 1:
                     break
 
-                compression_strain.append(eps)
                 Phi.append(phi) # 1/mm
                 Moment.append(moment)
                 center_strain.append(-phi*(section_center -  c2))
-                #strain = -phi*(coor - c2)
-                #strain = -phi*(coor - c2)
 
                 c0 = 0.9*c2
                 c1 = 1.1*c2
 
 
         self.curvature, self.moment = np.array([Phi, Moment]) 
-        self.compression_strain = np.array(compression_strain)
         self.center_strain = np.array(center_strain)
 
         return np.array([Phi, Moment])
@@ -2169,7 +2154,7 @@ class SectionAnalysis:
             return x2
 
 
-    def PM(self, eps_co, eps_sy, direction=3, total_step=50):
+    def __PM(self, eps_co, eps_sy, direction=3, total_step=50):
         """
 
         """
@@ -2230,4 +2215,3 @@ class SectionAnalysis:
         return np.array([Moment, Force])
 
 
-#

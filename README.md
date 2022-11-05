@@ -4,7 +4,7 @@ Change directory where you want to keep the project.
 ```
 bash
 cd /home/user/directory
-git clone https://github.com/gtuinsaat/rayir.git
+git clone https://github.com/bilalgungorr/rayir.git
 pip3 install -e rayir
 python3 -m pip install -e .
 ```
