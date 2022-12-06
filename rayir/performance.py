@@ -1,11 +1,17 @@
-#!/usr/bin/python3
+from .bilinear import bilinear
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axis import Axis
+
 # Algoritma
     # kritik strain degerlerini hesapla
     # kritik strain degerlerinin kaldigi araligin alt indisi bul
     # kritik straine tekabul eden egriligi bul
     # egrilige tekabul eden momenti bul
+
+def close_spines(ax, *where):
+    for w in where:
+        ax.spines[w].set_visible(False)
 
 
 def findex(value, array):
@@ -24,7 +30,7 @@ class Performance:
     def __init__(self, saModel):
         self.saModel = saModel
 
-    def something(self, Ls, Lp, phiy, phiu, My, eta=1):
+    def __something(self, Ls, Lp, phiy, phiu, My, eta=1):
         # db ortalama cap 
         # eta kolon-kirislerde 1, perdelerde 0.5
 
@@ -52,147 +58,220 @@ class Performance:
         return EIe
 
 
-    def performance(self, eps_c_phi_y, eps_s_phi_y):
+    def performance(self, bilinear_method):
 
-        curvature, moment = self.saModel.curvature, self.saModel.moment
+        curvature = self.saModel.curvature
+        moment = self.saModel.moment
         
         mat_concrete = self.saModel.parts_mats_dict.get('confined')
+        mat_steel = self.saModel.parts_mats_dict.get('rebar')
+        #mat_steel.ultimate_strain #mat_concrete.ultimate_strain
         
         ecGO = mat_concrete.ecGO
         esGO = mat_concrete.esGO
         if ecGO > 0.018:
             ecGO = 0.018
         
-        mat_steel = self.saModel.parts_mats_dict.get('rebar')
-        eps_sy = mat_steel._mat_function_args[1]
+
+        eCM = {'main': {}, 'ec': {}, 'es': {}}
+
+        eLimits = {
+                'ec': {
+                    'MN': -0.0025,
+                    'DC': -0.75*ecGO,
+                    'CO': -ecGO,
+                    'ultimate': mat_concrete.ultimate_strain
+                    },
+                'es': {
+                    'MN': 0.0075,
+                    'DC': 0.75*esGO,
+                    'CO': esGO,
+                    'ultimate': mat_steel.ultimate_strain
+                    }
+                }
 
 
-        eLimits = {'ec': [-0.0025, -abs(eps_c_phi_y), -0.75*ecGO, -ecGO],
-                   'es': [0.0075, eps_s_phi_y, 0.75*esGO, esGO]} 
+        eStrains = {'ec': self.saModel.get_strain(part='confined', strain_sign=-1),
+                    'es': self.saModel.get_strain(part='rebar', strain_sign=1)}
 
-        eStrains = {'ec': self.saModel.get_strain(coordinates='unconfined'),
-                    'es': self.saModel.get_strain(rebar_tag=-1)}
-        
 
-        sCM = {'ec': [[], []],
-               'es': [[], []]}
+        CM_bilinear = bilinear(curvature, moment, method=bilinear_method).T.tolist()
+        for j, level in enumerate(['yield']):#, 'ultimate']):
+            eCM['ec'][level] = CM_bilinear[j+1]
+            eCM['es'][level] = CM_bilinear[j+1]
+            eCM['main'][level] = CM_bilinear[j+1]
 
-        for part in sCM:
-            for e in eLimits[part]:
-                # TODO: condition, index not in interval. 
-                ind = findex(e, eStrains[part])
-                if ind:
+
+        ind = findex(CM_bilinear[1][0], curvature)
+        if ind:
+            s1 = slice(ind, ind+2)
+            eps_cy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['ec'][s1])
+            eps_sy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['es'][s1])
+            eLimits['ec']['yield'] = eps_cy
+            eLimits['es']['yield'] = eps_sy
+
+
+
+        for level in ('MN', 'DC', 'CO', 'ultimate'):
+            for part in ('ec', 'es'):
+                eps = eLimits[part][level]
+                ind = findex(eps, eStrains[part])
+
+                if ind and ind < len(curvature) - 2:
                     s1 = slice(ind, ind+2)
-                    s2 = slice(ind+1, ind+3)
-                    cur = interpolate(e, *eStrains[part][s1], *curvature[s2])
-                    mom = interpolate(cur, *curvature[s2], *moment[s2])
-                    
-                    sCM[part][0].append(cur)
-                    sCM[part][1].append(mom)
-
-        
-        
-        ultCM = [curvature[-1], moment[-1]]
-
-        lenec, lenes = [len(sCM[i][0]) for i in ['ec', 'es']]
-        maxind = max(lenec, lenes)
-        mainsCM = [[0]*maxind, [0]*maxind]
-
-        for i in range(maxind):
-            if i < lenec:
-                ecC, ecM = sCM['ec'][0][i], sCM['ec'][1][i]
-                
-                if i < lenes:
-                    esC, esM = sCM['es'][0][i], sCM['es'][1][i]
-                    cond = 1*(ecC > esC) 
-                    mainsCM[0][i] = [ecC, esC][cond]
-                    mainsCM[1][i] = [ecM, esM][cond]
-
                 else:
-                    mainsCM[0][i] = ecC
-                    mainsCM[1][i] = ecM
+                    s1 = slice(-2, None)
 
-            else:
-                mainsCM[0][i] = sCM['es'][0][i]
-                mainsCM[1][i] = sCM['es'][1][i]
+                cur = interpolate(eps, *eStrains[part][s1], *curvature[s1])
+                mom = interpolate(cur, *curvature[s1], *moment[s1])
+                eCM[part][level] = [cur, mom]
+
+            c_cm = eCM['ec'].get(level)
+            s_cm = eCM['es'].get(level)
+
+            if c_cm and s_cm:
+                if s_cm[0] < c_cm[0]:
+                    cm = s_cm
+                else:
+                    cm = c_cm
+
+            elif c_cm:
+                cm = c_cm
+            elif s_cm:
+                cm = s_cm
+
+            eCM['main'][level] = cm
+
+
+        
 
         self.eLimits = eLimits
-        self.sCM = sCM 
-        self.mainsCM = mainsCM
-        self.labels = [*['MN', r'$\phi_y$', 'DC', 'CO'][:maxind], r'$\phi_u$']
-        self.xticks = [*mainsCM[0], ultCM[0]]
-        self.yticks = [*mainsCM[1], ultCM[1]]
-
-        # sil
-        self.eStrains = eStrains
+        self.eCM = eCM 
+        self.curvature = curvature
+        self.moment = moment
 
 
-    def plot(self, fig, precision=4, section=False, rotation_xaxis=0):
-        sCM = self.sCM 
-        eLimits = {part: [round(i, precision) for i in values] 
-                    for part, values in self.eLimits.items()}
-        curvature, moment = self.saModel.curvature, self.saModel.moment
-        xticks = [round(i, precision) for i in self.xticks] 
-        yticks = [int(i) for i in self.yticks] 
-        labels =  self.labels
-
-        xmax = max(curvature)*1.05
-
-        if fig == -1:
-            fig = plt.figure(figsize=(9, 6), dpi=80)
-
-        fgsize = 0.05
-        dy = fgsize*1.6
-        ax = fig.add_axes([0, 2*(fgsize + dy) + 0.5*fgsize, 
-                           1, 1 - 2*(fgsize + dy) - 0.5*fgsize], frameon=False)
-        ax.set_xlim(0, xmax)
-        ax.set_xticks(xticks)
-        plt.xticks(rotation=rotation_xaxis)
-        ax.set_ylim(0, max(moment)*1.1)
-        ax.grid(axis='x')
-        ax.set_xlabel(r'$\phi (m^{-1})$')
-        ax.xaxis.set_label_coords(1.05, 0, transform=None)
-        ax.axhline(0, lw=3)
-        ax.axvline(0, lw=3)
-        
-        axt = ax.twiny()
-        axt.set_frame_on(False)   
-        axt.set_xlim(0, xmax)
-        axt.set_xticks(xticks)
-        axt.set_xticklabels(yticks)
-        axt.set_xlabel(r'$M (kNm)$')
-        axt.xaxis.set_label_coords(0, 1.05, transform=None)
-
-        ax.plot(curvature, moment, '.--', ms=2)
-
-        for j in range(len(labels)):
-            ax.text(xticks[j], yticks[j], labels[j])
+    def plot(self, figsize, section=False):
+        eCM = self.eCM 
+        curvature = self.curvature*1e3
+        moment = self.moment*1e-6
 
 
-        axs = [fig.add_axes([0, 0, 1, fgsize], frameon=False),
-               fig.add_axes([0, fgsize + dy, 1, fgsize], frameon=False)]
+        allCM = []
+        for k1, v1 in eCM.items():
+            for k2, v2 in v1.items():
+                eCM[k1][k2] = [v2[0]*1e3, v2[1]*1e-6]
+                if k1 != 'main':
+                    if not (k1 == 'ec' and k2 in ['yield', 'ultimate']):
+                        allCM.append(eCM[k1][k2])
 
-        xnames = [r'$\epsilon_c$', r'$\epsilon_s$']
-        for j, [key, CM] in enumerate(sCM.items()):
+        allCM = np.array(allCM)
 
-            axs[j].yaxis.set_visible(False)
-            axs[j].xaxis.set_label_coords(1.05, 0, transform=None)
-            axs[j].axhline(0, lw=1.5)
-            axs[j].grid(axis='x')
-            
-            axs[j].set_xlim(0, xmax)
-            axs[j].set_ylim(-0.5, 1)
-            axs[j].set_xticks(CM[0])
-            axs[j].set_xticklabels([abs(val) for val in eLimits[key][:len(CM[0])]])
-            axs[j].set_xlabel(xnames[j])
-            
-            for i in range(len(CM[0])):
-                axs[j].text(CM[0][i], 0.2, labels[i])
+
+        xmax = max(curvature)*1.1
+
+
+        plt.rcParams.update({
+            'font.size': 7,
+            'axes.titlesize': 8,
+            'axes.labelsize': 7, 
+            'figure.titlesize': 'small',
+            'figure.frameon': False,
+            'font.size': 9,
+            'lines.linewidth': 1.,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8, 
+            'ytick.major.size': .0,
+            'ytick.minor.size': .0,
+            'xtick.major.size': .0,
+            'xtick.minor.size': .0,
+            'ytick.left': False,  
+            'ytick.right': False,  
+            'yaxis.labellocation': 'top',
+            'xaxis.labellocation': 'right',
+            'legend.fontsize': 7,
+            'legend.labelspacing': 0.,
+            'figure.autolayout': True,
+            #'text.usetex': True,
+            })
+
+        ratios = [12, 1, 1]
+        fig, ax = plt.subplots(3, 1,# sharex=True,
+                #layout='tight',
+                figsize=figsize, dpi=100,
+                gridspec_kw={'height_ratios': ratios}
+                )
+        #ax[0].autoscale_view('tight')
+
+
+        ax[0].plot(curvature, moment, 'c-')
+
+        #cm_y = eCM['bilinear']['yield']
+        #cm_u = eCM['bilinear']['ultimate']
+        cm_y = eCM['main']['yield']
+        #cm_u = eCM['main']['ultimate']
+        cm_u = curvature[-1], moment[-1]
+
+        ax[0].plot([0, cm_y[0], cm_u[0]], [0, cm_y[1], cm_u[1]], 'm--', label='bilinear')
+
+        close_spines(ax[0], 'top', 'right')
+        close_spines(ax[1], 'top', 'right', 'left')
+        close_spines(ax[2], 'top', 'right', 'left')
+
+        markers = ['D', 'o', 's']
+        markers = ['o', 'o', 'o']
+        colors = {'yield': 'b', 'ultimate': 'k', 'MN': 'g', 'DC': 'orange', 'CO': 'r'}
+        xlabels = [r'$\phi [1/m]$', r'$\epsilon_c [\%]$', r'$\epsilon_s [\%]$']
+
+
+        ax[0].text(0., 1.01, 'M[kNm]',
+                transform=ax[0].transAxes, ha='center', va='bottom')
+        lw = plt.rcParams['lines.linewidth']
+        for i, part in enumerate(['main', 'ec', 'es']):
+
+            CM = eCM[part]
+            xticks = []
+            xtick_labels = []
+            ax[i].text(1.01, 0, xlabels[i], 
+                    transform=ax[i].transAxes, ha='left', va='center')
+            for j, (level, cm) in enumerate(CM.items()):
+                if i < 1:
+                    ax[i].plot(*cm, c=colors[level], marker = markers[i], ms=3)
+                    ax[i].axvline(cm[0], lw=0.7*lw, c='gray', alpha=0.5)
+
+                else:
+
+                    ax[i].plot(cm[0], 0, c=colors[level], marker=markers[i], ms=3)
+                    xtick_labels.append(round(self.eLimits[part][level]*100, 2))
+
+                xticks.append(cm[0])
+
+
+            len_xticks = len(xticks)
+
+            if i < 1:
+                ax[i].set_ylim(bottom=0)
+                ax[i].set_xticks(np.round(xticks, 3))
+            else:
+                for cm in allCM:
+                    ax[i].axvline(cm[0], lw=0.7*lw, c='gray', alpha=0.5)
+                ax[i].set_ylim(-0.5, 0.5)
+                ax[i].set_yticks([])
+                #xtick_labels = [round(i*100, 2) for i in list(self.eLimits[part].values())]
+                ax[i].set_xticks(xticks, xtick_labels)
+            ax[i].set_xlim(-0.01*xmax, xmax)
+
+
+        pLevels = ('MN', 'DC', 'CO', 'yield', 'ultimate')
+        for i, level in enumerate(pLevels):
+            ax[0].plot([], [], lw=4, label=level,  c=colors[level])
+        ax[0].legend(loc='lower right', bbox_to_anchor=(1., 0.0))
 
         if section:
-            ax0 = fig.add_axes([0.5, 0.3, 0.4, 0.4], frameon=False)
+            ax0 = fig.add_axes([0.35, 0.45, 0.35, 0.35], frameon=False)
             ax0.axis('equal')
             ax0.axis('off')
-            self.saModel.rebar.plot(ax=ax0, show_id_phi='phi')
+            self.saModel.rebar.plot(ax=ax0, show_id_phi=None)
 
-#
+        return fig, ax
+

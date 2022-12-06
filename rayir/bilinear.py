@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize_scalar as scipy_minimize
 from scipy.optimize import root_scalar as scipy_root_scalar
-from scipy.optimize import fmin as scipy_fmin
 
 def interpolate(x2, x0, x1, y0, y1):
     y2 = y1 + (x2 - x1)*(y1 - y0)/(x1 - x0)
@@ -32,21 +31,21 @@ def find_value2(x, xarray, yarray):
     return find_value(x, xarray, yarray)
 
 
-def bilinear_response(curvature, moment, method='UTC-40'):
+def bilinear(curvature, moment, method='06Vy'):
     """
     Return (ndarray): np.array([[0, phiY, phiU], [0, My, Mu]])
         bilinear represantation of moment-curvature relation.
         
     Parameters:
-        method (str): {'UTC-40', 'regression'}
+        method (str): {'06Vy', 'regression'}
     """
 
     method = method.upper()
 
-    if not method in ['UTC-40', 'REGRESSION']:
-        raise ValueError("method must be one of {'UTC-40', 'regression'}")
+    if not method in ['06VY', 'REGRESSION']:
+        raise ValueError("method must be one of {'06VY', 'regression'}")
 
-    if method.upper() == 'UTC-40':
+    if method == '06VY':
         phiy, my = _find_yield_point(curvature, moment)
         return np.array([
             [0, phiy, curvature[-1]], [0, my, moment[-1]]
@@ -209,9 +208,8 @@ def _find_yield_point(deformations, forces, keff=None):
 
     if keff is None:
         ke0 = np.nanmin(forces[1:5]/deformations[1:5])
-
         sol = scipy_root_scalar(function, method='secant',
-                bracket=[0.1*ke0, ke0*2],
+                bracket=[-0.1, 0.1], # TODO: buradan emin degilim
                 x0=ke0*0.5, x1=ke0)
         ke = sol.root
 

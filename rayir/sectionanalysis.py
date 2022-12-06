@@ -1375,22 +1375,22 @@ class Reinforcement: # mander_wi2 hesabi kontrol edilmelidir.
                                        [xc + b - d3, yc + d3],
                                        [xc + b - d3, yc + h - d3],
                                        [xc + d3, yc + h - d3]],
-                                       color='b', fill=False)
+                                       color='b', fill=False, lw=0.5)
 
             transverse2 = plt.Polygon([[xc + d3 + phiw, yc + d3 + phiw],
                                        [xc + b - d3 - phiw, yc + d3 + phiw],
                                        [xc + b - d3 - phiw, yc + h - d3 - phiw],
                                        [xc + d3 + phiw, yc + h - d3 - phiw]],
-                                       color='b', fill=False)
+                                       color='b', fill=False, lw=0.5)
 
         elif self._shape == 'circle':
             D, d3, xc, yc = self._D, self._d3, *self._origin
             section = plt.Circle((xc + D/2, yc + D/2),
                                   D/2, color='gray', alpha=0.3)
             transverse1 = plt.Circle((xc + D/2, yc + D/2),
-                                      D/2 - d3, color='b', fill=False)
+                                      D/2 - d3, color='b', fill=False, lw=0.5)
             transverse2 = plt.Circle((xc + D/2, yc + D/2),
-                                      D/2 - d3 - phiw, color='b', fill=False)
+                                      D/2 - d3 - phiw, color='b', fill=False, lw=0.5)
 
         patches = [section, transverse1, transverse2]
         for p in patches:
@@ -1504,7 +1504,7 @@ class Material: # ultimate_strain
             Es (float): initial tangent modulus.
             fsy (float): yield strength.
             eps_sh (float): strain at the end of yield plateau.
-            eps_du (float): ultimate strain.
+            eps_su (float): ultimate strain.
             fsu (float): ultimate strength.
         """
 
