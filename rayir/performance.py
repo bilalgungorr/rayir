@@ -1,13 +1,7 @@
 from .bilinear import bilinear
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.axis import Axis
 
-# Algoritma
-    # kritik strain degerlerini hesapla
-    # kritik strain degerlerinin kaldigi araligin alt indisi bul
-    # kritik straine tekabul eden egriligi bul
-    # egrilige tekabul eden momenti bul
 
 def close_spines(ax, *where):
     for w in where:
@@ -29,51 +23,70 @@ class Performance:
 
     def __init__(self, saModel):
         self.saModel = saModel
+        mat_concrete = self.saModel.parts_mats_dict.get('confined')
+        mat_steel = self.saModel.parts_mats_dict.get('rebar')
 
-    def __something(self, Ls, Lp, phiy, phiu, My, eta=1):
+        if not mat_concrete:
+            sys.exit('Must be used Confined Mander material model')
+
+        if not mat_steel:
+            sys.exit('Must be used Steel material model')
+
+
+    def perRotation(self, Ls, Lp, eta=1):
         # db ortalama cap 
         # eta kolon-kirislerde 1, perdelerde 0.5
 
+        mat_steel = self.saModel.parts_mats_dict.get('rebar')
+        mat_concrete = self.saModel.parts_mats_dict.get('confined')
+
         dir_ind = abs(self.saModel.direction) - 2
-        h = self.saModel.geo.height[dir_ind]/1e3
+        h = self.saModel.geo.height[dir_ind]
         
         diameters = []
         for value in self.saModel.rebar.rebar_dict.values():
             diameters.append(value[2])
-        db = sum(diameters)/len(diameters)/1e3
+        db = sum(diameters)/len(diameters)
 
-        for m in self.saModel.parts_mats_dict.values():
-            if m.material_model == 'Confined Mander':
-                fc = m._mat_function_args[0]
-                fyh, eps_su = m._mat_function_args2[:2]
-                fce = 1.3*fc
-                fye = 1.2*fyh
-               
-        tpGO = (2/3)*((phiu - phiy)*Lp*(1 - 0.5*Lp/Ls) + 4.5*phiu*db)
-        
+        fc = mat_concrete._mat_function_args[0]
+        fsy = mat_steel._mat_function_args[0]
 
-        thetay = phiy*Ls/3 + 0.0015*eta*(1 + 1.5*h/Ls) + phiy*db*fye/(8*fce**0.5)
-        print('thetay', thetay)
-        EIe = (My*Ls)/(thetay*3)
-        return EIe
+        phiy, My = self.pCM['main']['yield']
+        phiu = self.pCM['main']['ultimate'][0]
 
 
-    def performance(self, bilinear_method):
+        # fsy: fye; fc : fce
+        thetay = phiy*Ls/3 + 0.0015*eta*(1 + 1.5*h/Ls) + phiy*db*fsy/(8*fc**0.5)
+
+        self.EIe = (My*Ls)/(thetay*3)
+
+        tGO = (2/3)*((phiu - phiy)*Lp*(1 - 0.5*Lp/Ls) + 4.5*phiu*db)
+
+        self.tLimits = {
+            'yield': thetay,
+            'MN': 0.0,
+            'DC': 0.75*tGO,
+            'CO': tGO
+            }
+
+
+    def perStrain(self, bilinear_method):
 
         curvature = self.saModel.curvature
         moment = self.saModel.moment
         
         mat_concrete = self.saModel.parts_mats_dict.get('confined')
         mat_steel = self.saModel.parts_mats_dict.get('rebar')
-        #mat_steel.ultimate_strain #mat_concrete.ultimate_strain
         
-        ecGO = mat_concrete.ecGO
-        esGO = mat_concrete.esGO
+        ecGO = mat_concrete._ecGO
+        eps_su = mat_steel.ultimate_strain
+        esGO = 0.4*eps_su
+
         if ecGO > 0.018:
             ecGO = 0.018
         
 
-        eCM = {'main': {}, 'ec': {}, 'es': {}}
+        pCM = {'main': {}, 'ec': {}, 'es': {}}
 
         eLimits = {
                 'ec': {
@@ -97,9 +110,9 @@ class Performance:
 
         CM_bilinear = bilinear(curvature, moment, method=bilinear_method).T.tolist()
         for j, level in enumerate(['yield']):#, 'ultimate']):
-            eCM['ec'][level] = CM_bilinear[j+1]
-            eCM['es'][level] = CM_bilinear[j+1]
-            eCM['main'][level] = CM_bilinear[j+1]
+            pCM['ec'][level] = CM_bilinear[j+1]
+            pCM['es'][level] = CM_bilinear[j+1]
+            pCM['main'][level] = CM_bilinear[j+1]
 
 
         ind = findex(CM_bilinear[1][0], curvature)
@@ -124,10 +137,10 @@ class Performance:
 
                 cur = interpolate(eps, *eStrains[part][s1], *curvature[s1])
                 mom = interpolate(cur, *curvature[s1], *moment[s1])
-                eCM[part][level] = [cur, mom]
+                pCM[part][level] = [cur, mom]
 
-            c_cm = eCM['ec'].get(level)
-            s_cm = eCM['es'].get(level)
+            c_cm = pCM['ec'].get(level)
+            s_cm = pCM['es'].get(level)
 
             if c_cm and s_cm:
                 if s_cm[0] < c_cm[0]:
@@ -140,30 +153,26 @@ class Performance:
             elif s_cm:
                 cm = s_cm
 
-            eCM['main'][level] = cm
-
-
-        
+            pCM['main'][level] = cm
 
         self.eLimits = eLimits
-        self.eCM = eCM 
-        self.curvature = curvature
-        self.moment = moment
+        self.pCM = pCM 
 
 
     def plot(self, figsize, section=False):
-        eCM = self.eCM 
-        curvature = self.curvature*1e3
-        moment = self.moment*1e-6
+        pCM = {}
+        curvature = np.copy(self.saModel.curvature)*1e3
+        moment = np.copy(self.saModel.moment)*1e-6
 
 
         allCM = []
-        for k1, v1 in eCM.items():
+        for k1, v1 in self.pCM.items():
+            pCM[k1] = {}
             for k2, v2 in v1.items():
-                eCM[k1][k2] = [v2[0]*1e3, v2[1]*1e-6]
+                pCM[k1][k2] = [v2[0]*1e3, v2[1]*1e-6]
                 if k1 != 'main':
                     if not (k1 == 'ec' and k2 in ['yield', 'ultimate']):
-                        allCM.append(eCM[k1][k2])
+                        allCM.append(pCM[k1][k2])
 
         allCM = np.array(allCM)
 
@@ -177,10 +186,10 @@ class Performance:
             'axes.labelsize': 7, 
             'figure.titlesize': 'small',
             'figure.frameon': False,
-            'font.size': 9,
+            'font.size': 7,
             'lines.linewidth': 1.,
-            'xtick.labelsize': 8,
-            'ytick.labelsize': 8, 
+            'xtick.labelsize': 7,
+            'ytick.labelsize': 7, 
             'ytick.major.size': .0,
             'ytick.minor.size': .0,
             'xtick.major.size': .0,
@@ -198,6 +207,7 @@ class Performance:
         ratios = [12, 1, 1]
         fig, ax = plt.subplots(3, 1,# sharex=True,
                 #layout='tight',
+                layout="constrained",
                 figsize=figsize, dpi=100,
                 gridspec_kw={'height_ratios': ratios}
                 )
@@ -206,10 +216,10 @@ class Performance:
 
         ax[0].plot(curvature, moment, 'c-')
 
-        #cm_y = eCM['bilinear']['yield']
-        #cm_u = eCM['bilinear']['ultimate']
-        cm_y = eCM['main']['yield']
-        #cm_u = eCM['main']['ultimate']
+        #cm_y = pCM['bilinear']['yield']
+        #cm_u = pCM['bilinear']['ultimate']
+        cm_y = pCM['main']['yield']
+        #cm_u = pCM['main']['ultimate']
         cm_u = curvature[-1], moment[-1]
 
         ax[0].plot([0, cm_y[0], cm_u[0]], [0, cm_y[1], cm_u[1]], 'm--', label='bilinear')
@@ -229,7 +239,7 @@ class Performance:
         lw = plt.rcParams['lines.linewidth']
         for i, part in enumerate(['main', 'ec', 'es']):
 
-            CM = eCM[part]
+            CM = pCM[part]
             xticks = []
             xtick_labels = []
             ax[i].text(1.01, 0, xlabels[i], 

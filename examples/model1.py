@@ -73,23 +73,40 @@ if __name__ == '__main__':
 
     curvature, moment = model.MomentCurvature(curv_impact*1e-3, -P, direction=3)
 
-    curvature = 1e3*np.abs(curvature)
-    moment = 1e-6*np.abs(moment)
 
 
 
     per =  rayir.Performance(model)
-    per.performance('06Vy')
+    per.perStrain('06Vy')
+
+    #perRotation(Ls, Lp, phiy, phiu, My, eta=1):
+    # Ls: kesme acikligi, moment/kesme kuvveti, kolon ve kirislerde L/2
+    # eta: kiris ve kolonlarda 1, perdelerde 0.5
+    Ls = 3000 # mm
+    Lp = 200 # mm
+    per.perRotation(Ls, Lp, eta=1)
+
+    Ec = 5000*fc**0.5 # TBDY
+    EIg = Ec*b*h**3/12
+    phiy, My = per.pCM['main']['yield']
+
+    print('='*70)
+    print(f'EIe = {round(per.EIe/EIg, 4)} TBDY-Denk.5.2')
+    print(f'EIe = {round(My/phiy/EIg, 4)} My/phiy')
+    print('-'*20, 'rotation', '-'*20)
+    
+    print(f'{"level":15s} {"theta":10s}')
+    for k, theta in per.tLimits.items():
+        print(f'{k:10s} {theta:10.5f}')
+
+
+    print('-'*20, 'strain', '-'*20)
+    print(f'{"level":15s} {"phi":10s} {"mom":5s}')
+    for k, [phi, mom] in per.pCM['main'].items():
+        print(f'{k:10s} {phi*1e3:10.5f} {mom*1e-6:10.1f}')
+
+    print('='*70)
+
     fig, ax = per.plot((10/2.54, 7/2.54), section=True)
-    for k1, v1 in per.eLimits.items():
-        for k2, v2 in v1.items():
-
-            print(f'{k1} {k2:10s} {v2:10.5f}')
-
-
-    for k, [phi, mom] in per.eCM['main'].items():
-        print(f'{k:10s} {phi:10.5f} {mom:10.5f}')
-
-
-
+    #fig.savefig('./sec1.pdf')
     plt.show()

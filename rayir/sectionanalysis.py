@@ -1691,8 +1691,7 @@ class Material: # ultimate_strain
                 omega_we = alpha_e*rho_s*fyh/fc
 
             # TBDY-2018
-            self.ecGO = 0.0035 + coeff*omega_we**0.5
-            self.esGO = 0.4*eps_su
+            self._ecGO = 0.0035 + coeff*omega_we**0.5
 
             ke = alpha_e/(1 - rho_cc)
             fe = ke*fyh*rho_s
