@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.optimize import minimize_scalar as scipy_minimize
 from scipy.optimize import root_scalar as scipy_root_scalar
 
@@ -100,23 +101,6 @@ def _bilinear_with_point(xarray, yarray):
     return np.array([[0, x1, x2], [0, y1, y2]])
 
 
-    if keff is None:
-        ke0 = np.nanmin(forces[1:5]/deformations[1:5])
-
-
-        sol = scipy_root_scalar(function, method='secant',
-                bracket=[0.1*ke0, ke0*2],
-                x0=ke0*0.5, x1=ke0)
-
-        ke = sol.root
-
-    else:
-        ke = keff
-    
-    function(ke)
-    return dy_try, fy_try 
-
-
 def _bilinear_with_index(xarray, yarray):
     rss_sum = 0
     RSS = []
@@ -183,6 +167,7 @@ def _find_yield_point(deformations, forces, keff=None):
 
     # for binding
     dy_try, fy_try = 0, 0
+    #import matplotlib.pyplot as plt
 
     def function(ke):
         nonlocal dy_try, fy_try
@@ -195,15 +180,14 @@ def _find_yield_point(deformations, forces, keff=None):
         
         # deformation that makes area under bilinear curve equal to area_curve
         dy_try = interpolate(area_curve, a0, a1, d0, d1)
-        #print(area_curve, area_bil_func(dy_try, ke))
-
         fy_try = ke*dy_try
         
         # finding deformation at which corresponding force 
         # equal to 60 % of yield force (fy_try)
         dy06 = find_value(0.6*fy_try, forces, deformations)
         fy06 = ke*dy06
-        
+        #plt.plot([0, dy_try, deformations[-1]], [0, fy_try, forces[-1]])
+
         return 0.6*dy_try - dy06
 
     if keff is None:
@@ -217,5 +201,8 @@ def _find_yield_point(deformations, forces, keff=None):
         ke = keff
     
     function(ke)
+
     return dy_try, fy_try 
+
+
 

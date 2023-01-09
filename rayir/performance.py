@@ -33,45 +33,7 @@ class Performance:
             sys.exit('Must be used Steel material model')
 
 
-    def perRotation(self, Ls, Lp, eta=1):
-        # db ortalama cap 
-        # eta kolon-kirislerde 1, perdelerde 0.5
-
-        mat_steel = self.saModel.parts_mats_dict.get('rebar')
-        mat_concrete = self.saModel.parts_mats_dict.get('confined')
-
-        dir_ind = abs(self.saModel.direction) - 2
-        h = self.saModel.geo.height[dir_ind]
-        
-        diameters = []
-        for value in self.saModel.rebar.rebar_dict.values():
-            diameters.append(value[2])
-        db = sum(diameters)/len(diameters)
-
-        fc = mat_concrete._mat_function_args[0]
-        fsy = mat_steel._mat_function_args[0]
-
-        phiy, My = self.pCM['main']['yield']
-        phiu = self.pCM['main']['ultimate'][0]
-
-
-        # fsy: fye; fc : fce
-        thetay = phiy*Ls/3 + 0.0015*eta*(1 + 1.5*h/Ls) + phiy*db*fsy/(8*fc**0.5)
-
-        self.EIe = (My*Ls)/(thetay*3)
-
-        tGO = (2/3)*((phiu - phiy)*Lp*(1 - 0.5*Lp/Ls) + 4.5*phiu*db)
-
-        self.tLimits = {
-            'yield': thetay,
-            'MN': 0.0,
-            'DC': 0.75*tGO,
-            'CO': tGO
-            }
-
-
     def perStrain(self, bilinear_method):
-
         curvature = self.saModel.curvature
         moment = self.saModel.moment
         
@@ -108,36 +70,17 @@ class Performance:
                     'es': self.saModel.get_strain(part='rebar', strain_sign=1)}
 
 
-        CM_bilinear = bilinear(curvature, moment, method=bilinear_method).T.tolist()
-        for j, level in enumerate(['yield']):#, 'ultimate']):
-            pCM['ec'][level] = CM_bilinear[j+1]
-            pCM['es'][level] = CM_bilinear[j+1]
-            pCM['main'][level] = CM_bilinear[j+1]
-
-
-        ind = findex(CM_bilinear[1][0], curvature)
-        if ind:
-            s1 = slice(ind, ind+2)
-            eps_cy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['ec'][s1])
-            eps_sy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['es'][s1])
-            eLimits['ec']['yield'] = eps_cy
-            eLimits['es']['yield'] = eps_sy
-
-
-
+        #for level in ('MN', 'DC', 'CO'):
         for level in ('MN', 'DC', 'CO', 'ultimate'):
             for part in ('ec', 'es'):
                 eps = eLimits[part][level]
                 ind = findex(eps, eStrains[part])
-
-                if ind and ind < len(curvature) - 2:
+                if ind and ind < len(curvature):
                     s1 = slice(ind, ind+2)
-                else:
-                    s1 = slice(-2, None)
 
-                cur = interpolate(eps, *eStrains[part][s1], *curvature[s1])
-                mom = interpolate(cur, *curvature[s1], *moment[s1])
-                pCM[part][level] = [cur, mom]
+                    cur = interpolate(eps, *eStrains[part][s1], *curvature[s1])
+                    mom = interpolate(cur, *curvature[s1], *moment[s1])
+                    pCM[part][level] = [cur, mom]
 
             c_cm = pCM['ec'].get(level)
             s_cm = pCM['es'].get(level)
@@ -152,11 +95,71 @@ class Performance:
                 cm = c_cm
             elif s_cm:
                 cm = s_cm
+            else:
+                continue
 
             pCM['main'][level] = cm
 
+
+        CM_bilinear = bilinear(curvature, moment, method=bilinear_method).T.tolist()
+        #for j, level in enumerate(['yield', 'ultimate']):
+        for j, level in enumerate(['yield']):
+            pCM['ec'][level] = CM_bilinear[j+1]
+            pCM['es'][level] = CM_bilinear[j+1]
+            pCM['main'][level] = CM_bilinear[j+1]
+
+
+        ind = findex(CM_bilinear[1][0], curvature)
+        if ind:
+            s1 = slice(ind, ind+2)
+            eps_cy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['ec'][s1])
+            eps_sy = interpolate(CM_bilinear[1][0], *curvature[s1], *eStrains['es'][s1])
+            eLimits['ec']['yield'] = eps_cy
+            eLimits['es']['yield'] = eps_sy
+
+
         self.eLimits = eLimits
         self.pCM = pCM 
+        self.eStrains = eStrains
+
+
+    def perRotation(self, Ls, Lp, eta=1, My=-1, phiy=-1, phiu=-1):
+        # db ortalama cap 
+        # eta kolon-kirislerde 1, perdelerde 0.5
+
+        mat_steel = self.saModel.parts_mats_dict.get('rebar')
+        mat_concrete = self.saModel.parts_mats_dict.get('confined')
+
+        dir_ind = abs(self.saModel.direction) - 2
+        h = self.saModel.geo.height[dir_ind]
+        
+        diameters = []
+        for value in self.saModel.rebar.rebar_dict.values():
+            diameters.append(value[2])
+        db = sum(diameters)/len(diameters)
+
+        fc = mat_concrete._mat_function_args[0]
+        fsy = mat_steel._mat_function_args[0]
+
+        if phiy == -1:
+            phiy, My = self.pCM['main']['yield']
+        if phiu == -1:
+            phiu = self.pCM['main']['CO'][0]
+
+
+        # fsy: fye; fc : fce
+        thetay = phiy*Ls/3 + 0.0015*eta*(1 + 1.5*h/Ls) + phiy*db*fsy/(8*fc**0.5)
+
+        self.EIe = (My*Ls)/(thetay*3)
+
+        tGO = (2/3)*((phiu - phiy)*Lp*(1 - 0.5*Lp/Ls) + 4.5*phiu*db)
+
+        self.tLimits = {
+            'yield': thetay,
+            'MN': 0.0,
+            'DC': 0.75*tGO,
+            'CO': tGO
+            }
 
 
     def plot(self, figsize, section=False):
@@ -216,11 +219,9 @@ class Performance:
 
         ax[0].plot(curvature, moment, 'c-')
 
-        #cm_y = pCM['bilinear']['yield']
-        #cm_u = pCM['bilinear']['ultimate']
         cm_y = pCM['main']['yield']
-        #cm_u = pCM['main']['ultimate']
         cm_u = curvature[-1], moment[-1]
+        #cm_u = pCM['main']['ultimate']
 
         ax[0].plot([0, cm_y[0], cm_u[0]], [0, cm_y[1], cm_u[1]], 'm--', label='bilinear')
 
@@ -272,7 +273,8 @@ class Performance:
             ax[i].set_xlim(-0.01*xmax, xmax)
 
 
-        pLevels = ('MN', 'DC', 'CO', 'yield', 'ultimate')
+        #pLevels = ('MN', 'DC', 'CO', 'yield', 'ultimate')
+        pLevels = pCM['main'].keys()
         for i, level in enumerate(pLevels):
             ax[0].plot([], [], lw=4, label=level,  c=colors[level])
         ax[0].legend(loc='lower right', bbox_to_anchor=(1., 0.0))

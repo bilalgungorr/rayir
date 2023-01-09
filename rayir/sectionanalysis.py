@@ -2086,7 +2086,6 @@ class SectionAnalysis:
         Moment = []
         Phi = []
         center_strain = []
-
         
         brk = 0
         eps_height = [None, h1, 0.][sign]
@@ -2113,8 +2112,6 @@ class SectionAnalysis:
                     sigma_var = material.stress(strain) # MPa
                     moment += (sigma_var*self._area_dict[part])@(section_center - coor) # Nmm
                 
-                if brk == 1:
-                    break
 
                 Phi.append(phi) # 1/mm
                 Moment.append(moment)
@@ -2122,6 +2119,9 @@ class SectionAnalysis:
 
                 c0 = 0.9*c2
                 c1 = 1.1*c2
+
+            if brk == 1:
+                break
 
 
         self.curvature, self.moment = np.array([Phi, Moment]) 
