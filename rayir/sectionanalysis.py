@@ -29,9 +29,12 @@ def formatting(editor, opspy=''):
         'rect':		opspy+'patch("rect"{} {} {})\n'.format(', {}', fint*2, fflo*4),
         'fib':		opspy+'fiber({:.4f}, {:.4f}, {:.6f}, {})\n',
         'sec':		opspy+'section("Fiber", {}',
-        'mrebar':   opspy+'uniaxialMaterial("Steel4"{}, "-iso"{})\n'.format(emp*3, fflo*5),
-        'kentpark':	opspy+'uniaxialMaterial("Concrete01" {})\n'.format(emp*5),
-        'mander':	opspy+'uniaxialMaterial("Concrete04" {})\n'.format(emp + fflo*4)
+        'S02':      opspy+'uniaxialMaterial("Steel02"{})\n'.format(emp*7),
+        'S04':   opspy+'uniaxialMaterial("Steel4"{}, "-iso"{})\n'.format(emp*3, fflo*5),
+        'kentpark':	opspy+'uniaxialMaterial("Concrete01"{})\n'.format(emp*5),
+        'C04':	opspy+'uniaxialMaterial("Concrete04"{})\n'.format(emp + fflo*4),
+        'C07':opspy+'uniaxialMaterial("Concrete07"{})\n'.format(emp + ', {}'*8)# duzelt
+
         }
 
 
@@ -45,9 +48,11 @@ def formatting(editor, opspy=''):
         'rect':		'\tpatch rect {} {} {}\n'.format('{}', fint*2, fflo*4),
         'fib':		'\tfiber {} {} {}\n'.format(fflo*2, ' {:10.6f}', fint),
         'sec':		'section Fiber {}',
-        'mrebar':   'uniaxialMaterial Steel4 {} -iso {}\n'.format(emp*3, fflo*5),
+        'S02':      'uniaxialMaterial Steel02 {})\n'.format(emp*7),
+        'S04':      'uniaxialMaterial Steel4 {} -iso {}\n'.format(emp*3, fflo*5),
         'kentpark':	'uniaxialMaterial Concrete01 {} {} {} {} {}\n',
-        'mander':	'uniaxialMaterial Concrete04 {}\n'.format(emp + fflo*4)
+        'C04':      'uniaxialMaterial Concrete04 {}\n'.format(emp + fflo*4),
+        'C07':      'uniaxialMaterial Concrete07 {}\n'.format(emp + fflo*8)
         }
 
 _editor = 'python'
@@ -1530,9 +1535,12 @@ class Material: # ultimate_strain
         Esh = 2*(fsu - self.fsy)/(eps_su - eps_sh)
         rhoi = (fsu - self.fsy)/self.fsy*1.05
         lyp = (eps_sh - eps_sy)/(eps_sy)
-        ops_args = ['{}', self.fsy*1e3, Es*1e3, Esh/Es*0.9, rhoi, 0.0008, 2.773, lyp]
 
-        self._ops_txt = _format['mrebar'].format(*ops_args)
+        ops_args = ['{}', self.fsy*1e3, Es*1e3, Esh/Es*0.9, rhoi, 0.0008, 2.773, lyp]
+        self._ops_txt = _format['S04'].format(*ops_args)
+
+        #ops_args = ['{}', self.fsy*1e3, Es*1e3, 0.02, 20, 0.925, 0.15]
+        #self._ops_txt = _format['S02'].format(*ops_args)
 
 
     def to_ops(self, matTag):
@@ -1660,6 +1668,10 @@ class Material: # ultimate_strain
             eps_c list(float): strain
         """
         fc, Ec, confined, eps_co, s, Ast, fyh_d, transverse_type = self._mat_function_args
+
+
+        fct = 0.35*(fc)**0.5
+        eps_ct = 2*fct/Ec
         
         if confined:
             fyh, eps_su, shape, mander_wi2, As, phiw, core_dimensions = self._mat_function_args2
@@ -1708,7 +1720,10 @@ class Material: # ultimate_strain
             self._args = [eps_cc, eps_cu, fcc, r]
             self.stress = self.__mander_confined
             
-            ops_args = ['{}', -fcc*1e3, -eps_cc, -eps_cu, Ec*1e3]
+            xn = eps_cu/eps_cc
+            #ops_args = ['{}', -fcc*1e3, -eps_cc, -eps_cu, Ec*1e3] # C04
+            ops_args = ['{}', -fcc*1e3, -eps_cc, Ec*1e3, fct*1e3, eps_ct, 2., xn, r] # C07
+            self._ops_txt = _format['C07'].format(*ops_args)
         
         elif not confined: # unconfined
             Esec = fc/eps_co
@@ -1719,9 +1734,10 @@ class Material: # ultimate_strain
             self._args = [eps_co, fc, f35, r]
             self.stress = self.__mander_unconfined
              
-            ops_args = ['{}', -fc*1e3, -eps_co, -0.0035, Ec*1e3]
-        
-        self._ops_txt = _format['mander'].format(*ops_args)
+            #ops_args = ['{}', -fc*1e3, -eps_co, -0.0035, Ec*1e3] #C04
+            ops_args = ['{}', -fc*1e3, -eps_co, Ec*1e3, fct*1e3, eps_ct, 2., 1.75, 3.8]
+            self._ops_txt = _format['C07'].format(*ops_args)
+
         return self.stress(eps_c)
 
 
@@ -2094,6 +2110,9 @@ class SectionAnalysis:
         c1 = 0.95*h1
 
         for phi in phis:
+
+            c0 = 0.05*h1
+            c1 = 0.95*h1
             c2 = self.Secant(c0, c1, axial_load, sumForce, 100, 100)
             if c2 != None and (0 < c2 < h1):
                 moment = 0
@@ -2105,9 +2124,11 @@ class SectionAnalysis:
                     if limit_strain:
                         if limit_strain > 0 and np.any(strain > limit_strain):
                             brk = 1
+                            print(part, limit_strain, max(strain))
 
                         elif limit_strain < 0 and np.any(strain < limit_strain):
                             brk = 1
+                            print(part, limit_strain, min(strain))
                     
                     sigma_var = material.stress(strain) # MPa
                     moment += (sigma_var*self._area_dict[part])@(section_center - coor) # Nmm
