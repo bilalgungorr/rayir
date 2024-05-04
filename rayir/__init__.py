@@ -2,7 +2,6 @@ from .sectionanalysis import Geometry, Reinforcement, Material, SectionAnalysis,
 from .performance import Performance
 from .version import __version__
 from .bilinear import bilinear
-#from .bilinear import bilinear
-from . import ops
+#from . import ops
 
 formatting('python', opspy = 'ops')
