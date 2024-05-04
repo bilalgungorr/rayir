@@ -20,7 +20,6 @@ def interpolate(x2, x0, x1, y0, y1):
 
 
 class Performance:
-
     def __init__(self, saModel):
         self.saModel = saModel
         mat_concrete = self.saModel.parts_mats_dict.get('confined')
